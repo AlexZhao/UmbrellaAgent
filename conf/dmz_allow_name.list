@@ -1,0 +1,11 @@
+# regex matching based domain list filter
+# Update DMZ Host can access direct target based on 
+# DNS Name lookup result, traffic control not based on gateway proxy
+# but based on dynamic firewall
+# Fedora
+([\w\-\.]*)fedoraproject.org.
+# Fedora NTP
+([\w\-\.]*)fedora.pool.ntp.org.
+# github
+([\w\-\.]*)github([\w\.]*).
+# Add others if you want DMZ to access, otherwise it will block all access by firewall on FreeBSD from DMZ to access

@@ -1,0 +1,24 @@
+# Disclaim, it can use to bypass GFW   
+# regex matching based domain list filter
+# for forward list automatically, normall direct IP forwarding
+# based on IP address with this script to base on name lookup result
+# automatic add to forward table in BSD OS   
+# nintendo switch   
+([\-\w\.]*).nintendo.([\w\.]*).
+nintendo.([\w\.]*).
+# google website, with risk of not google webiste for its large wildcast
+([\w\-\.]*)google([\w\.]*).
+([\-\w\.]*).ytimg.([\w\.]*).
+([\-\w\.]*).doubleclick.([\w\.]*).
+([\-\w\.]*).gstatic.([\w\.]*).
+# risk of not youtube website
+([\-\w\.]*)youtube([\w\.]*).
+([\-\w\.]*).googlevideo.com.
+# wikipedia
+([\w\.]*).wikipedia.org.
+#github
+([\w\-\.]*)github([\w\.]*).
+# medium
+([\w\-\.]*)medium([\w\.]*).
+# fedora
+([\-\w\.]*).fedorainfracloud.org.
