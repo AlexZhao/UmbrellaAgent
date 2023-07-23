@@ -1,4 +1,6 @@
-#:mode=python:
+#!/usr/bin/python
+# LICENSE: Apache 2.0
+# Copyright 2021-2023 Zhao Zhe, Alex Zhao
 # Python Script used to filter out nf-monitor
 # For filtering all the traffic will be redirect by ss-redir
 # Filter Source IP address, according to dnsmasq.lease to locate

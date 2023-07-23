@@ -1,0 +1,14 @@
+[Unit]
+Description=Network Access Audit,Dynamic Forwarding Configuration Engine
+After=multi-user.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+ExecStart=/usr/bin/python /usr/bin/umbrella/nfaudit.py /etc/umbrella/conf/known_device.list /etc/umbrella/conf/fwd_name.list /etc/umbrella/conf/dmz_allow_name.list
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+

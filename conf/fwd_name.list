@@ -3,6 +3,7 @@
 # for forward list automatically, normall direct IP forwarding
 # based on IP address with this script to base on name lookup result
 # automatic add to forward table in BSD OS   
+# Below is example of configuration
 # nintendo switch   
 ([\-\w\.]*).nintendo.([\w\.]*).
 nintendo.([\w\.]*).
