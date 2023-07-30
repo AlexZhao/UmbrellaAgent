@@ -1,0 +1,25 @@
+{
+    "umbrella_firewall_endpoint": {
+        "ip": "",
+        "port": 6466
+    },
+    "umbrella_agent_ip": "",
+    "known_devices_list": "/etc/umbrella/conf/known_device.list",
+    "gfw_bypass_list": "/etc/umbrella/conf/fwd_name.list",
+    "dmz_allow_access_list": "/etc/umbrella/conf/dmz_allow_name.list",
+    "firewall_timeout": 3600,
+    "databases": {
+        "dns_mon": {
+            "host": "",
+            "user": "",
+            "password": "",
+            "database": ""
+        },
+        "router_mon": {
+            "host": "",
+            "user": "",
+            "password": "",
+            "database": ""
+        }
+    }
+}

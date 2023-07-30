@@ -2,8 +2,7 @@
 
 This works with UmbrellaFirewall    
 From Agent to filter the domain name by tcpdump to send the IP to open the access on FreeBSD Router   
-tcpdump is a bad idea for this usage, ebpf based DNS filter take sometime    
-
+tcpdump is a bad idea for this usage, ebpf based DNS filter take sometime to impl   
 
 # SQLSchema    
 Mysql Database Schema used for recording the domain name accessed through the Umbrella Controlled internal network   
@@ -11,7 +10,7 @@ Mysql Database Schema used for recording the domain name accessed through the Um
 
 ## Communicate with UmbrellaFirewall to update out access allow list (Firewall Open)  
 
-
+## DMZ external traffic is controlled only allow the configured target for DMZ to access     
 
 ## Update SQL database to record all DNS lookup initiated from Internal network (Audit)   
 
