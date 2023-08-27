@@ -21,5 +21,13 @@
             "password": "",
             "database": ""
         }
+    },
+    "nw_dns_log": {
+        "file": "/var/log/nw_dns_pkt.log",
+        "dns_endpoints": ["192.168.*.*"],
+        "dns_upstreams": {
+            "192.168.1.1": "",
+            "192.168.1.*": "fwd"
+        }
     }
 }

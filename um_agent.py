@@ -1,6 +1,9 @@
 #!/usr/bin/python
 # LICENSE: Apache 2.0
 # Copyright 2021-2023 Zhao Zhe, Alex Zhao
+#
+# Umbrella Agent of Dynamic Firewall Configuration
+#
 # Python Script used to filter out nf-monitor
 # For filtering all the traffic will be redirect by ss-redir
 # Filter Source IP address, according to dnsmasq.lease to locate
@@ -336,7 +339,110 @@ def dmz_lookup_monitor(firewall_ip, firewall_port):
                             print("Error when insert answers to database expect ", ans_count, "but have ", updated_ans_count)
 
 
+def nw_dns_monitor(nw_dns_log, db_host, db_user, db_password, db_database, firewall_ip, firewall_port, agent_ip):
+    """
+    Parse Umbrella NW filtered packets log
+    """
+    global global_device_mac_pair
+    umbrella_firewall_uri = "https://{ip}:{port}".format(ip=firewall_ip, port=firewall_port)
+
+    try:
+        dns_db = _mysql.connect(host=db_host, user=db_user, password=db_password, database=db_database)
+    except BaseException as e:
+        print("DNS Monitor Connecting Database Failed ", e)
+        sys.exit()
+
+    try:
+        log_file = nw_dns_log["file"]
+        dns_pkt_process = subprocess.Popen(['tail', '-f', log_file], stdout=subprocess.PIPE)
+    except BaseException as e:
+        print("NW DNS Monitoring log not found  ", e)
+        sys.exit()
+
+    try:
+        endpoints = dict({})
+        for dns in nw_dns_log["dns_endpoints"]:
+            endpoints[dns] = True
+        
+        upstreams = dict({})
+        for upstream, fwd in nw_dns_log["dns_upstreams"].items():
+            if fwd == "fwd":
+                upstreams[upstream] = True
+            else:
+                upstreams[upstream] = False
+    except BaseException as e:
+        print("NW DNS Monitoring log not have correct DNS configuration  ", e)
+        sys.exit()
+
+    # Flush the fwd list
+    async_flush_fwd_allow_table("fwdlist", umbrella_firewall_uri)
+
+    while True:
+        output = dns_pkt_process.stdout.readline().decode("utf-8").strip()
+        try:
+            dns_pkt = json.loads(output)
+            if dns_pkt["pkt_type"] == "dns_request":
+                # DNS Request 
+                dst_ip = dns_pkt["ip_header"]["dst"]
+                if dst_ip not in endpoints:
+                    continue
+                src_mac = dns_pkt["mac_header"]["src"]
+                src_ip = dns_pkt["ip_header"]["src"]
+                for q in dns_pkt["questions"]:
+                    try:
+                        domain_name = q.split()[0]
+
+                        if src_mac in global_device_ignore:
+                            continue
+                        else:
+                            try:
+                                if src_mac in global_device_mac_pair:
+                                    update_dns_record_to_db(dns_db, domain_name, src_ip, src_mac, global_device_mac_pair[src_mac])                     
+                                else:
+                                    update_dns_record_to_db(dns_db, domain_name, src_ip, src_mac)                     
+                            except (MySQLdb.Error, MySQLdb.Warning) as e:
+                                dns_db = _mysql.connect(host=db_host, user=db_user, password=db_password, database=db_database)                
+                    except BaseException as e:
+                        """
+                        No need to process exception
+                        """
+
+            elif dns_pkt["pkt_type"] == "dns_response":
+                # DNS Response
+                src_ip = dns_pkt["ip_header"]["src"]
+                dst_ip = dns_pkt["ip_header"]["dst"]
+		single_ans_with_can_name = False
+                for record in dns_pkt["rrs"]:
+                    recs = record.split()
+                    name = recs[0]
+                    record_type = recs[3]
+                    record_content = recs[4]
+
+                    # DMZ Access Control based on needs
+                    # DMZ's outgoing traffic is under configured allow list of domain names
+                    if src_ip == dst_ip and src_ip == "127.0.0.1":
+                        update_dynamic_firewall_dmz_access_control(name, umbrella_firewall_uri, single_ans_with_can_name, record_type, record_content)
+                        continue
+
+                    try:
+                         update_dns_ans_to_db(dns_db, name, record_type, record_content)
+                    except (MySQLdb.Error, MySQLdb.Warning) as e:
+                        dns_db = _mysql.connect(host=db_host, user=db_user, password=db_password, database=db_database)
+
+                    try:
+                        if src_ip in upstreams and upstreams[src_ip]:
+                            find_if_name_in_forward_name_list(name, umbrella_firewall_uri, single_ans_with_can_name, record_type, record_content)
+                    except BaseException as e:
+                        """
+                        No handling of this exception
+                        """
+        except BaseException as e:
+            print("Not able to process the monitored DNS packet  ", output, e)
+
 def dns_lookup_monitor(db_host, db_user, db_password, db_database, firewall_ip, firewall_port, agent_ip):
+    """
+    Parse DNS packet direct with tcpdump
+    """
     global global_device_mac_pair
     umbrella_firewall_uri = "https://{ip}:{port}".format(ip=firewall_ip, port=firewall_port)
 
@@ -709,13 +815,37 @@ if __name__ == '__main__':
     if forward_name_list != "":
         load_forward_name_list(forward_name_list)
 
-    dns_thread_config = build_config(config, "dns_mon")
-    if dns_thread_config:
-        dns_mon_th = threading.Thread(name="dns mon", target=dns_lookup_monitor, kwargs=dns_thread_config)
-        dns_mon_th.start()
+    if "nw_dns_log" in config:
+        nw_dns_th_config = build_config(config, "dns_mon")
+        if nw_dns_th_config:
+            nw_dns_th_config["nw_dns_log"] = config["nw_dns_log"]
+            nw_dns_mon_th = threading.Thread(name="nw dns mon", target=nw_dns_monitor, kwargs=nw_dns_th_config)
+            nw_dns_mon_th.start()
+        else:
+            print("Internal network DNS monitor not with correct configuration")
+            sys.exit()
     else:
-        print("Internal network DNS monitor not with correct configuration")
-        sys.exit()
+        dns_thread_config = build_config(config, "dns_mon")
+        if dns_thread_config:
+            dns_mon_th = threading.Thread(name="dns mon", target=dns_lookup_monitor, kwargs=dns_thread_config)
+            dns_mon_th.start()
+        else:
+            print("Internal network DNS monitor not with correct configuration")
+            sys.exit()
+
+        dmz_agent_config = {}
+        if "umbrella_firewall_endpoint" in config:
+            dmz_agent_config["firewall_ip"] = config["umbrella_firewall_endpoint"]["ip"]
+            dmz_agent_config["firewall_port"] = config["umbrella_firewall_endpoint"]["port"]
+        else:
+            dmz_agent_config = None
+
+        if dmz_agent_config:
+            dmz_mon_th = threading.Thread(name='dmz mon', target=dmz_lookup_monitor, kwargs=dmz_agent_config)
+            dmz_mon_th.start()
+        else:
+            print("Not firewall on main router configuration existed")
+            sys.exit()
 
     nf_thread_config = build_config(config, "router_mon")
     if nf_thread_config:
@@ -723,21 +853,6 @@ if __name__ == '__main__':
         nf_con_mon_th.start()
     else:
         print("Internal network router monitor not with correct configuration")
-        sys.exit()
-
-
-    dmz_agent_config = {}
-    if "umbrella_firewall_endpoint" in config:
-        dmz_agent_config["firewall_ip"] = config["umbrella_firewall_endpoint"]["ip"]
-        dmz_agent_config["firewall_port"] = config["umbrella_firewall_endpoint"]["port"]
-    else:
-        dmz_agent_config = None
-
-    if dmz_agent_config:
-        dmz_mon_th = threading.Thread(name='dmz mon', target=dmz_lookup_monitor, kwargs=dmz_agent_config)
-        dmz_mon_th.start()
-    else:
-        print("Not firewall on main router configuration existed")
         sys.exit()
 
     timeout_config = {}
