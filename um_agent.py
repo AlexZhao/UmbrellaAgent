@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # LICENSE: Apache 2.0
-# Copyright 2021-2023 Zhao Zhe, Alex Zhao
+# Copyright 2021-2023 Zhao Zhe (Alex)
 #
 # Umbrella Agent of Dynamic Firewall Configuration
 #
@@ -90,18 +90,18 @@
 #            | last_access | datetime         | YES  |     | NULL    |                |
 #            +-------------+------------------+------+-----+---------+----------------+
 #
-import os;
-import subprocess;
-import re;
-import time;
-import threading;
-import sys;
-import json;
+import os
+import subprocess
+import re
+import time
+import threading
+import sys
+import json
 
-from threading import Lock;
+from threading import Lock
 
-from MySQLdb import _mysql;
-import MySQLdb;
+from MySQLdb import _mysql
+import MySQLdb
 
 # Modify the mac address of the DMZ address   
 global_device_mac_pair = {}
@@ -193,7 +193,7 @@ def classify_traffic_types(db, agent_ip, arp_filter, tproto, src, dst, via = "")
             else:
                 print(time.asctime(current_time), ": new ", tproto, " src ", src, " mac_addr ", mac_addr, " dst ", dst, "via ", via)
 
-def nf_connection_monitor(db_host, db_user, db_password, db_database, firewall_ip, firewall_port, agent_ip):
+def nf_connection_monitor(db_host, db_user, db_password, db_database, firewall_ip, firewall_port, firewall_psk, agent_ip):
     # Connectivity monitoring by Netfilter
     # All links outgoing through the forwarding will be monitored
     # it will not monitoring the link direct go with Main router which
@@ -294,7 +294,7 @@ def update_dns_record_to_db(db, name, src_ip, mac_addr, comments="not registered
         print("wrong during query database ", query_phase, " error ", e, "reconnecting")
         raise e
 
-def dmz_lookup_monitor(firewall_ip, firewall_port):
+def dmz_lookup_monitor(firewall_ip, firewall_port, firewall_psk):
     """
     DMZ Direct access DNS lookup monitoring for name based bypass
     """
@@ -333,13 +333,13 @@ def dmz_lookup_monitor(firewall_ip, firewall_port):
                             name = record_match.group(1)
                             record_type = record_match.group(2)
                             record_content = record_match.group(3)
-                            update_dynamic_firewall_dmz_access_control(name, umbrella_firewall_uri, single_ans_with_can_name, record_type, record_content)
+                            update_dynamic_firewall_dmz_access_control(name, umbrella_firewall_uri, firewall_psk, single_ans_with_can_name, record_type, record_content)
                             updated_ans_count = updated_ans_count + 1
                         if ans_count != updated_ans_count:
                             print("Error when insert answers to database expect ", ans_count, "but have ", updated_ans_count)
 
 
-def nw_dns_monitor(nw_dns_log, db_host, db_user, db_password, db_database, firewall_ip, firewall_port, agent_ip):
+def nw_dns_monitor(nw_dns_log, db_host, db_user, db_password, db_database, firewall_ip, firewall_port, firewall_psk, agent_ip):
     """
     Parse Umbrella NW filtered packets log
     """
@@ -375,7 +375,7 @@ def nw_dns_monitor(nw_dns_log, db_host, db_user, db_password, db_database, firew
         sys.exit()
 
     # Flush the fwd list
-    async_flush_fwd_allow_table("fwdlist", umbrella_firewall_uri)
+    async_flush_fwd_allow_table("fwdlist", umbrella_firewall_uri, firewall_psk)
 
     while True:
         output = dns_pkt_process.stdout.readline().decode("utf-8").strip()
@@ -411,7 +411,7 @@ def nw_dns_monitor(nw_dns_log, db_host, db_user, db_password, db_database, firew
                 # DNS Response
                 src_ip = dns_pkt["ip_header"]["src"]
                 dst_ip = dns_pkt["ip_header"]["dst"]
-		single_ans_with_can_name = False
+                single_ans_with_can_name = False
                 for record in dns_pkt["rrs"]:
                     recs = record.split()
                     name = recs[0]
@@ -421,7 +421,7 @@ def nw_dns_monitor(nw_dns_log, db_host, db_user, db_password, db_database, firew
                     # DMZ Access Control based on needs
                     # DMZ's outgoing traffic is under configured allow list of domain names
                     if src_ip == dst_ip and src_ip == "127.0.0.1":
-                        update_dynamic_firewall_dmz_access_control(name, umbrella_firewall_uri, single_ans_with_can_name, record_type, record_content)
+                        update_dynamic_firewall_dmz_access_control(name, umbrella_firewall_uri, firewall_psk, single_ans_with_can_name, record_type, record_content)
                         continue
 
                     try:
@@ -431,7 +431,7 @@ def nw_dns_monitor(nw_dns_log, db_host, db_user, db_password, db_database, firew
 
                     try:
                         if src_ip in upstreams and upstreams[src_ip]:
-                            find_if_name_in_forward_name_list(name, umbrella_firewall_uri, single_ans_with_can_name, record_type, record_content)
+                            find_if_name_in_forward_name_list(name, umbrella_firewall_uri, firewall_psk, single_ans_with_can_name, record_type, record_content)
                     except BaseException as e:
                         """
                         No handling of this exception
@@ -439,7 +439,7 @@ def nw_dns_monitor(nw_dns_log, db_host, db_user, db_password, db_database, firew
         except BaseException as e:
             print("Not able to process the monitored DNS packet  ", output, e)
 
-def dns_lookup_monitor(db_host, db_user, db_password, db_database, firewall_ip, firewall_port, agent_ip):
+def dns_lookup_monitor(db_host, db_user, db_password, db_database, firewall_ip, firewall_port, firewall_psk, agent_ip):
     """
     Parse DNS packet direct with tcpdump
     """
@@ -464,7 +464,7 @@ def dns_lookup_monitor(db_host, db_user, db_password, db_database, firewall_ip, 
         sys.exit()
 
     # Flush the fwd list
-    async_flush_fwd_allow_table("fwdlist", umbrella_firewall_uri)
+    async_flush_fwd_allow_table("fwdlist", umbrella_firewall_uri, firewall_psk)
 
     dns_ans_filter = re.compile("([\d\.]+) > ([\d\.]+): ([\d]+) ([\d]+)\/([\d]+)\/([\d]+) ([\w\.\,\s\-]+) (\([\d]+\))", re.IGNORECASE)
 
@@ -531,12 +531,12 @@ def dns_lookup_monitor(db_host, db_user, db_password, db_database, firewall_ip, 
                                 except (MySQLdb.Error, MySQLdb.Warning) as e:
                                     dns_db = _mysql.connect(host=db_host, user=db_user, password=db_password, database=db_database)
 
-                                find_if_name_in_forward_name_list(name, umbrella_firewall_uri, single_ans_with_can_name, record_type, record_content)
+                                find_if_name_in_forward_name_list(name, umbrella_firewall_uri, firewall_psk, single_ans_with_can_name, record_type, record_content)
                                 updated_ans_count = updated_ans_count + 1
                             if ans_count != updated_ans_count:
                                 print("Error when insert answers to database expect ", ans_count, "but have ", updated_ans_count)
 
-def timeout_process(firewall_ip, firewall_port, firewall_timeout):
+def timeout_process(firewall_ip, firewall_port, firewall_timeout, firewall_psk):
     """
     Timeout Process for all timeout firewall entries
     """
@@ -560,14 +560,14 @@ def timeout_process(firewall_ip, firewall_port, firewall_timeout):
         global_dmz_configured_target_ip_list_lock.release()
 
         for ip in dmz_clean_ip:
-            async_del_dmz_allow_target("async_del_dmz_allow_target", umbrella_firewall_uri, ip)
+            async_del_dmz_allow_target("async_del_dmz_allow_target", umbrella_firewall_uri, ip, firewall_psk)
 
         flush_cnt = flush_cnt + 1
         if flush_cnt >= 60 * 24:  #Every Day flush fwdlist table
             global_fwd_configured_target_ip_list_lock.acquire()
             global_fwd_configured_target_ip_list.clear()
             global_fwd_configured_target_ip_list_lock.release()
-            async_flush_fwd_allow_table("fwdlist", umbrella_firewall_uri)
+            async_flush_fwd_allow_table("fwdlist", umbrella_firewall_uri, firewall_psk)
             flush_cnt = 0
         else:
             fwd_clean_ip = []
@@ -580,63 +580,78 @@ def timeout_process(firewall_ip, firewall_port, firewall_timeout):
             global_fwd_configured_target_ip_list_lock.release()        
 
             for ip in fwd_clean_ip:
-                async_del_fwd_allow_target("async_del_fwd_allow_target", umbrella_firewall_uri, ip)
+                async_del_fwd_allow_target("async_del_fwd_allow_target", umbrella_firewall_uri, ip, firewall_psk)
 
 
 # automatic configure direct forward IP address to ipfw firewall
-def async_add_fwd_allow_target(name, uri, fwd_ip):
+def async_add_fwd_allow_target(name, uri, fwd_ip, psk):
     """
     Async configure Dynamic firewall on FreeBSD ipfw fwd_list table Make sure you have 192.168.10.1 as the UmbrellaFirewall
     """
     try:
-        cmdline = "curl -k -X POST {uri}/add_fwd_target_ip?ip_addr={ip}".format(uri=uri, ip=fwd_ip)
+        if psk:
+            cmdline = "curl -k -X POST {uri}/add_fwd_target_ip?\"ip_addr={ip}&psk={psk}\"".format(uri=uri, ip=fwd_ip, psk=psk)
+        else:
+            cmdline = "curl -k -X POST {uri}/add_fwd_target_ip?ip_addr={ip}".format(uri=uri, ip=fwd_ip)
         status = os.system(cmdline)
     except BaseException as e:
         print(e)
 
-def async_del_fwd_allow_target(name, uri, fwd_ip):
+def async_del_fwd_allow_target(name, uri, fwd_ip, psk):
     """
     Async configure Dynamic firewall on FreeBSD ipfw fwd_list table
     """
     try:
-        cmdline = "curl -k -X POST {uri}/del_fwd_target_ip?ip_addr={ip}".format(uri=uri, ip=fwd_ip)
+        if psk:
+            cmdline = "curl -k -X POST {uri}/del_fwd_target_ip?\"ip_addr={ip}&psk={psk}\"".format(uri=uri, ip=fwd_ip, psk=psk)
+        else:
+            cmdline = "curl -k -X POST {uri}/del_fwd_target_ip?ip_addr={ip}".format(uri=uri, ip=fwd_ip)
         status = os.system(cmdline)
     except BaseException as e:
         print(e)
 
-def async_flush_fwd_allow_table(name, uri):
+def async_flush_fwd_allow_table(name, uri, psk):
     """
     Async flush Dynamic firewall on FreeBSD ipfw fwd_list table
     """
     try:
-        cmdline = "curl -k -X POST {uri}/clr_fwd_target_ip?table=fwdlist".format(uri=uri)
+        if psk:
+            cmdline = "curl -k -X POST {uri}/clr_fwd_target_ip?\"table=fwdlist&psk={psk}\"".format(uri=uri, psk=psk)    
+        else:
+            cmdline = "curl -k -X POST {uri}/clr_fwd_target_ip?table=fwdlist".format(uri=uri)
         status = os.system(cmdline)
     except BaseException as e:
         print(e)
 
 # Async add dmz firewall
-def async_add_dmz_allow_target(name, uri, fwd_ip):
+def async_add_dmz_allow_target(name, uri, fwd_ip, psk):
     """
     Async configure Dynamic firewall on FreeBSD ipfw fwd_list table
     """
     try:
-        cmdline = "curl -k -X POST {uri}/add_dmz_target_ip?ip_addr={ip}".format(uri=uri, ip=fwd_ip)
+        if psk:
+            cmdline = "curl -k -X POST {uri}/add_dmz_target_ip?\"ip_addr={ip}&psk={psk}\"".format(uri=uri, ip=fwd_ip, psk=psk)
+        else:
+            cmdline = "curl -k -X POST {uri}/add_dmz_target_ip?ip_addr={ip}".format(uri=uri, ip=fwd_ip)
         status = os.system(cmdline)
     except BaseException as e:
         print(e)
 
 # Async del dmz firewall
-def async_del_dmz_allow_target(name, uri, fwd_ip):
+def async_del_dmz_allow_target(name, uri, fwd_ip, psk):
     """
     Async configure Dynamic firewall on FreeBSD ipfw fwd_list table
     """
     try:
-        cmdline = "curl -k -X POST {uri}/del_dmz_target_ip?ip_addr={ip}".format(uri=uri, ip=fwd_ip)
+        if psk:
+            cmdline = "curl -k -X POST {uri}/del_dmz_target_ip?\"ip_addr={ip}&psk={psk}\"".format(uri=uri, ip=fwd_ip, psk=psk)
+        else:
+            cmdline = "curl -k -X POST {uri}/del_dmz_target_ip?ip_addr={ip}".format(uri=uri, ip=fwd_ip)
         status = os.system(cmdline)
     except BaseException as e:
         print(e)
 
-def find_if_name_in_forward_name_list(name, uri, same_record, record_type, record_content):
+def find_if_name_in_forward_name_list(name, uri, psk, same_record, record_type, record_content):
     global global_fwd_list
     # Only activate on A record for IPv4 only network 
     if record_type == "CNAME":
@@ -656,7 +671,7 @@ def find_if_name_in_forward_name_list(name, uri, same_record, record_type, recor
             global_fwd_configured_target_ip_list_lock.release()
 
             if update_fwd_list:
-                async_add_fwd_allow_target(name, uri, record_content)
+                async_add_fwd_allow_target(name, uri, record_content, psk)
         else:
             for name_pattern in global_fwd_list:
                 name_match = name_pattern.match(name.strip())
@@ -669,9 +684,9 @@ def find_if_name_in_forward_name_list(name, uri, same_record, record_type, recor
                     global_fwd_configured_target_ip_list_lock.release()
 
                     if update_fwd_list:
-                        async_add_fwd_allow_target(name, uri, record_content)
+                        async_add_fwd_allow_target(name, uri, record_content, psk)
 
-def update_dynamic_firewall_dmz_access_control(name, uri, same_record, record_type, record_content):
+def update_dynamic_firewall_dmz_access_control(name, uri, psk, same_record, record_type, record_content):
     global global_dmz_target_list
     global global_dmz_configured_target_ip_list
     global global_dmz_configured_target_ip_list_lock
@@ -690,7 +705,7 @@ def update_dynamic_firewall_dmz_access_control(name, uri, same_record, record_ty
             global_dmz_configured_target_ip_list_lock.release()
             
             if update_dmz_list:
-                async_add_dmz_allow_target(name, uri, record_content)
+                async_add_dmz_allow_target(name, uri, record_content, psk)
         else:
             for name_pattern in global_dmz_target_list:
                 name_match = name_pattern.match(name.strip())
@@ -703,7 +718,7 @@ def update_dynamic_firewall_dmz_access_control(name, uri, same_record, record_ty
                     global_dmz_configured_target_ip_list_lock.release()
 
                     if update_dmz_list:
-                        async_add_dmz_allow_target(name, uri, record_content)
+                        async_add_dmz_allow_target(name, uri, record_content, psk)
 
 def load_device_list(device_list):
     global global_device_mac_pair
@@ -771,6 +786,10 @@ def build_config(config, db):
             thread_config["db_database"] = config["databases"][db]["database"]
             thread_config["firewall_ip"] = config["umbrella_firewall_endpoint"]["ip"]
             thread_config["firewall_port"] = config["umbrella_firewall_endpoint"]["port"]
+            if "psk" in config["umbrella_firewall_endpoint"]:
+                thread_config["firewall_psk"] = config["umbrella_firewall_endpoint"]["psk"]
+            else:
+                thread_config["firewall_psk"] = None
             thread_config["agent_ip"] = config["umbrella_agent_ip"]
     except BaseException as e:
         return None
@@ -785,7 +804,7 @@ if __name__ == '__main__':
     forward_name_list = ""
     dmz_name_list = ""
 
-    config_file = "/etc/umbrella/agent/um_agent.json"
+    config_file = "/etc/umbrella/agent/um_agent.conf"
 
     if sys.argv[1]:
         config_file = sys.argv[1]
@@ -837,6 +856,10 @@ if __name__ == '__main__':
         if "umbrella_firewall_endpoint" in config:
             dmz_agent_config["firewall_ip"] = config["umbrella_firewall_endpoint"]["ip"]
             dmz_agent_config["firewall_port"] = config["umbrella_firewall_endpoint"]["port"]
+            if "psk" in config["umbrella_firewall_endpoint"]:
+                dmz_agent_config["firewall_psk"] = config["umbrella_firewall_endpoint"]["psk"]
+            else:
+                dmz_agent_config["firewall_psk"] = None
         else:
             dmz_agent_config = None
 
@@ -860,6 +883,11 @@ if __name__ == '__main__':
     if "firewall_timeout" in config and "umbrella_firewall_endpoint" in config:
         timeout_config["firewall_ip"] = config["umbrella_firewall_endpoint"]["ip"]
         timeout_config["firewall_port"] = config["umbrella_firewall_endpoint"]["port"]
+        if "psk" in config["umbrella_firewall_endpoint"]:
+            timeout_config["firewall_psk"] = config["umbrella_firewall_endpoint"]["psk"]
+        else:
+            timeout_config["firewall_psk"] = None
+
         if config["firewall_timeout"] >= 5 * 60:
             timeout_config["firewall_timeout"] = config["firewall_timeout"]
 
