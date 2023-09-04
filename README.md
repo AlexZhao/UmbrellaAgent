@@ -1,4 +1,6 @@
-# UmbrellaAgent
+# UmbrellaAgent   
+
+English | [简体中文](README-CN.md)    
 
 This works with UmbrellaFirewall    
 From Agent to filter the domain name by tcpdump to send the IP to open the access on FreeBSD Router   
