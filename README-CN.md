@@ -75,6 +75,3 @@ Umbrealla Agent 使用SQL database （MariaDB） 来更新内网中所有设备�
 }
 
 ```
-
-![Donate](./DONATE.JPG)
-![Donate](./DONATE_Z.JPG)
